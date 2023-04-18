@@ -38,6 +38,7 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <fnmatch.h>
+#include <fcntl.h>
 #include <pthread.h>
 
 #include "misc.h"
