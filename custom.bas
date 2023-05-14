@@ -2075,6 +2075,8 @@ SUB plankmenu_cursor_move_tests
 END SUB
 
 SUB HTTP_demo()
+ 'TODO: if _FB_JS__ we could use browser fetch here, given this SUB is called demo I've disabled it on web for now
+ #ifndef __FB_JS__
  DIM url as string = "http://rpg.hamsterrepublic.com/nightly-archive/"
  IF prompt_for_string(url, "URL to fetch?", 100) = NO THEN EXIT SUB
  DIM req as HTTPRequest
@@ -2082,6 +2084,7 @@ SUB HTTP_demo()
  notification "failed=" & yesorno(req.failed) & " " & req.status & " - " & *req.status_string
  pop_warning *cast(zstring ptr, req.response)
  HTTP_Request_destroy(@req)
+ #endif
 END SUB
 
 EXTERN "C"

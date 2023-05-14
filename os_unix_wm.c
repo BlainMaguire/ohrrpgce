@@ -87,6 +87,9 @@ static int X_error_handler(Display *dpl, XErrorEvent *event) {
 }
 
 void set_X11_error_handlers() {
+	// Emscripten hasn't implemented everything in X11 (only provides stubs to common functions)
+	// Might make sense to just cut it down to an SDL surface or something for web anyway
+	#ifndef HOST_JS 
 	// The default Xlib error handler prints the error to stderr and calls
 	// exit(). That sucks, it would mean that e.g. if something goes wrong
 	// when the backend tries to create the window we can't try again with
@@ -97,6 +100,7 @@ void set_X11_error_handlers() {
 	// the X server is lost, or other fatal error, but we can at least
 	// try to shut down cleanly
 	XSetIOErrorHandler(X_fatal_error_handler);
+	#endif
 }
 
 // If you have multiple displays using Xinerama (likely) then unless USE_XINERAMA is defined, this returns
@@ -130,7 +134,9 @@ void os_get_screen_size(int *wide, int *high) {
 	}
 #endif
 
+	#ifndef HOST_JS
 	XCloseDisplay(display);
+	#endif
 }
 
 #else

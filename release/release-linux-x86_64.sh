@@ -16,4 +16,4 @@ scp -p distrib/ohrrpgce-player-linux-${TODAY}-${BRANCH}-*.zip "${SCPDEST}"/archi
 
 DEBTODAY=`date "+%Y.%m.%d"`
 SVNREV=`svn info | grep "^Revision:" | sed -e "s/Revision: //"`
-scp -p distrib/*_${DEBTODAY}.${BRANCH}-${SVNREV}_amd64.deb "${SCPDEST}"/archive/debian/
+scp -p distrib/*_${DEBTODAY}.${CODE}-${SVNREV}_amd64.deb "${SCPDEST}"/archive/debian/

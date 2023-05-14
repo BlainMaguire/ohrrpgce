@@ -7,7 +7,6 @@ cf. SConstruct, ohrbuild.py
 from __future__ import print_function
 import sys
 import os
-import shutil
 import shlex
 import itertools
 import re
@@ -104,6 +103,7 @@ mac = False
 android = False
 android_source = False
 win95 = int(ARGUMENTS.get ('win95', '0'))
+web = False
 glibc = False  # Computed below; can also be overridden by glibc=1 cmdline argument
 target = ARGUMENTS.get ('target', None)
 cross_compiling = (target is not None)  # Possibly inaccurate, avoid!
@@ -142,6 +142,9 @@ elif 'linux' in target or 'bsd' in target or 'unix' in target:
     unix = True
     if 'linux' in target:
         glibc = True
+if 'js-asmjs' in target:
+    web = True
+    CXXFLAGS = ['-Wno-non-virtual-dtor'] # consider adding some useful flags for the web build here
 else:
     print("!! WARNING: target '%s' not recognised!" % target)
 
@@ -224,6 +227,9 @@ elif arch != 'x86':
     gengcc = True
 if mac:
     gengcc = True
+
+if web:
+    arch = '(see target)'
 
 ################ Other commandline arguments
 
@@ -327,7 +333,9 @@ if asan:
     if int (ARGUMENTS.get ('gengcc', 1)):
         gengcc = True
         FB_exx = False  # Superceded by AddressSanitizer
-
+if web:
+    # if -exx is passed in, emcc runs into error: 'indirect goto in function with no address-of-label expressions' when generating the .c files
+    FB_exx = False
 if tiny:
     gengcc = True
     CFLAGS.append('-Os')
@@ -351,15 +359,16 @@ else:
     FBCC_CFLAGS.append ('-O0')
 
 # Help dead code stripping. (This helps a lot even in LTO builds!)
-CFLAGS += ['-ffunction-sections', '-fdata-sections']
-GENGCC_CFLAGS += ['-ffunction-sections', '-fdata-sections']
+if not web: #for web, let's not optimize prematurely, add these in if they actually reduce build size with no bugs
+    CFLAGS += ['-ffunction-sections', '-fdata-sections']
+    GENGCC_CFLAGS += ['-ffunction-sections', '-fdata-sections']
 
 # Backend selection.
 if 'gfx' in ARGUMENTS:
     gfx = ARGUMENTS['gfx']
 elif 'OHRGFX' in os.environ:
     gfx = os.environ['OHRGFX']
-elif mac:
+elif mac or web:
     gfx = 'sdl2'
 elif android:
     gfx = 'sdl'
@@ -427,7 +436,7 @@ if not CC:
 # FBCC is the compiler used for fbc-generated C code (gengcc=1).
 FBCC = ohrbuild.findtool(mod, ('FBCC', 'GCC'), compiler_arg)
 if not FBCC: FBCC = CC
-_cxx = {'gcc':'g++', 'clang':'clang++'}.get(compiler_arg, 'g++')
+_cxx = {'gcc':'g++', 'clang':'clang++', 'emcc' : 'emcc'}.get(compiler_arg, 'g++')
 CXX = ohrbuild.findtool(mod, 'CXX', _cxx)
 if not CXX:
     CXX = ohrbuild.findtool(mod, (), 'c++')
@@ -492,7 +501,7 @@ def bas_build_action(moreflags = ''):
     if transpile_dir:
         return ['$FBC $FBFLAGS -r $SOURCE -o $TARGET ' + moreflags]
 
-    if gengcc and FBCC.is_clang:
+    if gengcc and FBCC.is_clang and not web:
         # fbc asks FBCC to produce assembly and then runs that through as,
         # but clang produces some directives that as doesn't like.
         # So we do the .c -> asm step ourselves.
@@ -755,7 +764,8 @@ if target_prefix and target_prefix != CC.target + '-':
 if 'x86' in arch and gengcc:
     if FBCC.is_clang:
         # Currently needed on x86 only: fbc outputs some asm which clang doesn't like (-masm=intel doesn't help)
-        FBFLAGS += ['-asm', 'att']
+        if not web:
+            FBFLAGS += ['-asm', 'att']
     else:
         FBCC_CFLAGS += ['-masm=intel']
 
@@ -778,6 +788,7 @@ if gengcc:
         # -exx results in a lot of labelled goto use, which confuses gcc 4.8+, which tries harder to throw this warning
         # (This flag only recognised by recent gcc)
         if FBCC.version >= 480:
+            #GENGCC_CFLAGS.append ('-Wno-uninitialized')
             GENGCC_CFLAGS.append ('-Wno-maybe-uninitialized')
             # (The following is not in gcc 4.2)
             # Ignore warnings due to using an array lbound > 0
@@ -816,33 +827,82 @@ if FB_exx:
 
 ################ A bunch of stuff for linking
 
+# FB 0.91 added a multithreaded version of libfbgfx
+if FBC.version >= 910 and not web:
+    libfbgfx = 'fbgfxmt'
+else:
+    libfbgfx = 'fbgfx'
+
 if linkgcc:
     # Link using g++ instead of fbc; this makes it easy to link correct C++ libraries, but harder to link FB
 
     # Find the directory where the FB libraries are kept.
-    # Take the last line, in case -v is in FBFLAGS
-    libpath = get_command_output(FBC.path, ["-print", "fblibdir"] + FBFLAGS).split('\n')[-1]
-    # Some FB targets (win32) don't have PIC libs, android only has PIC libs
-    checkfile = os.path.join(libpath, 'fbrt0.o')
-    checkfile2 = os.path.join(libpath, 'fbrt0pic.o')
-    if not os.path.isfile(checkfile) and not os.path.isfile(checkfile2):
-        print("Error: This installation of FreeBASIC doesn't support this target-arch combination;\n" + checkfile + " [or fbrt0pic.o] are missing.")
-        Exit(1)
+    if FBC.version >= 1030:
+        # Take the last line, in case -v is in FBFLAGS
+        libpathlines = get_command_output (FBC.path, ["-print", "fblibdir"] + FBFLAGS).split('\n')
+        libpath = libpathlines[-1]
+        if not os.path.exists(libpath):
+            libpath = os.path.abspath(libpath)
+
+        # Some FB targets (win32) don't have PIC libs, android only has PIC libs
+        checkfile = os.path.join (libpath, 'fbrt0.o')
+        checkfile2 = os.path.join (libpath, 'fbrt0pic.o')
+        if web:
+            # assume browser version of the libs are installed somewhere like:
+            # /usr/local/lib/freebasic/js-asmjs
+            # let's double check the js lib is there at least
+            checkfile = os.path.join (libpath, 'fb_rtlib.js')
+            if not os.path.isfile (checkfile):
+                print('Error: Unable to find '+checkfile +' on js-asmjs target-arch combination.')
+                Exit(1)
+        elif not os.path.isfile (checkfile) and not os.path.isfile (checkfile2):
+            print("Error: This installation of FreeBASIC doesn't support this target-arch combination;\n" + checkfile + " [or fbrt0pic.o] are missing.")
+            Exit(1)
+    else:
+        if web:
+            print("!! WARNING: target is js-asmjs but using an older FBC version: "+FBC.version)
+        # Manually determine library location (TODO: delete this if certainly not supporting FB 1.02 any more)
+        fbc_path = os.path.dirname(os.path.realpath(FBC.path))
+        fblibpaths = [[fbc_path, '..', 'lib', 'freebasic'],  # Normal
+                      [fbc_path, 'lib'],   # Standalone
+                      [fbc_path, '..', 'lib'],
+                      ['/usr/share/freebasic/lib'],
+                      ['/usr/local/lib/freebasic']]
+        # For each of the above possible library paths, check four possible target subdirectories:
+        # (FB changes where the libraries are stored every other month)
+        targetdirs = [ [], [target + '-' + arch], [arch + '-' + target], [target] ]
+
+        for path, targetdir in itertools.product(fblibpaths, targetdirs):
+            libpath = os.path.join(*(path + targetdir))
+            print("Looking for FB libs in", libpath)
+            lib_to_test = 'fbrt0.o'
+            if web: #older FB versions probably don't have this, so it should raise an Exception
+                lib_to_test = 'fb_rtlib.js'
+            if os.path.isfile(os.path.join(libpath, lib_to_test)):
+                break
+        else:
+            raise Exception("Couldn't find the FreeBASIC lib directory")
 
     # This causes ld to recursively search the dependencies of linked dynamic libraries
     # for more dependencies (specifically SDL on X11, etc)
     # Usually the default, but overridden on some distros. Don't know whether GOLD ld supports this.
-    if not mac:
+    if not mac and not web:
         CCLINKFLAGS += ['-Wl,--add-needed']
 
     # FB libs
     # Passing this -L option straight to the linker is necessary, otherwise gcc gives it
     # priority over the default library paths, which on Windows means using FB's old mingw libraries
-    if android:
+    elif android:
         # See NO_PIE discussion above
         CCLINKFLAGS += ['-Wl,-L' + libpath, os.path.join(libpath, 'fbrt0pic.o'), '-lfbmtpic']
     else:
-        CCLINKFLAGS += ['-Wl,-L' + libpath, os.path.join(libpath, 'fbrt0.o'), '-lfbmt']
+        if web:
+            # # normally on *nix it would be like -lfb, but we want the emscripten versions and only what we need
+            flags = [os.path.join(libpath,'libfb.a'), os.path.join(libpath,'libfbgfx.a'), os.path.join(libpath,'libfbrt.a')]
+        else:
+            flags = ['-Wl,-L' + libpath, os.path.join(libpath, 'fbrt0.o'), '-lfbmt']
+        CCLINKFLAGS += flags
+
 
     if verbose:
         CCLINKFLAGS += ['-v']
@@ -865,7 +925,7 @@ if linkgcc:
             # (since ~2015), and some have libtinfo.so while others don't. Probably same mess on BSD.
             # So don't link to libncurses/libtinfo. Instead we link to lib/termcap_stub.c below.
             # Don't know about Mac situation.
-            if not portable or mac:
+            if (not portable or mac) and not web:
                 CCLINKFLAGS += ['-lncurses']
 
     if pdb:
@@ -907,10 +967,12 @@ if linkgcc:
             handle_symbols = None
 
     #if mac:
-        # -( -) are not supported on Mac, and don't seem to work with some other linkers either (e.g. on NixOS)...
-    if True:
-        # ...so never use -( -), to be more portable
-        basexe_gcc_action = '$CC -o $TARGET $SOURCES $CCLINKFLAGS'
+        # -( -) not supported
+    if web:
+            # preload file option maps ./data folder to /data  to the file system (MEMFS)
+            # This because required slices need to be accessible for custom/game
+            # -lidbfs.js to use localstorage, this just seems to make it available, saving games still goes to MEMFS
+            basexe_gcc_action = '$CXX $CXXFLAGS -o $TARGET -lidbfs.js --preload-file data --shell-file ohrrpgce-shell-template.html $SOURCES $CCLINKFLAGS'
     else:
         basexe_gcc_action = '$CC -o $TARGET $SOURCES "-Wl,-(" $CCLINKFLAGS "-Wl,-)"'
 
@@ -1080,7 +1142,53 @@ for k in music:
 ################ OS-specific modules and libraries
 
 # This module is OS-specific but shared by Windows (winsock) and Unix. A web port probably won't use it.
-base_modules += ['os_sockets.c']
+if web:
+    #base_modules += ['os_unix.c', 'os_unix2.bas']
+    #common_modules += ['os_unix_wm.c']
+    #common_modules += ['lib/x11_printerror.c']
+    #common_modules += ['lib/x11_printerror.c']
+    #we know it's SDL2 for music if web because we'll pass a flag to Emscripten below
+    #shared_modules += ['music_sdl2.bas']
+
+    commonenv['FBFLAGS'] += ['-s','USE_SDL=2']
+    commonenv['FBFLAGS'] += ['-s','USE_SDL_IMAGE=2']
+    commonenv['FBFLAGS'] += ['-s','USE_OFFSET_CONVERTER']
+    commonenv['FBFLAGS'] += ['-s','SDL2_IMAGE_FORMATS=\'["xpm"]\'']
+    #commonenv['FBFLAGS'] += ['-s','USE_PTHREADS=1']
+    #commonenv['FBFLAGS'] += ['-s', 'SHARED_MEMORY=1']
+    commonenv['FBFLAGS'] += ['-s','WASM=0']
+    #commonenv['FBFLAGS'] += ['-s','ASYNCIFY']
+    commonenv['FBFLAGS'] += ['-s','INITIAL_MEMORY=256MB']
+    #commonenv['FBFLAGS'] += ['-s','ALLOW_MEMORY_GROWTH=1']
+    commonenv['FBFLAGS'] += ['-s','TOTAL_STACK=128MB']
+    #commonenv['FBFLAGS'] += ['-s',  'SAFE_HEAP=1']
+    commonenv['FBFLAGS'] += ['-s', 'ASSERTIONS=1']
+    commonenv['FBFLAGS'] += ['-s','WARN_UNALIGNED=1']
+
+    commonenv['CCLINKFLAGS'] += ['-s','USE_SDL=2']
+    commonenv['CCLINKFLAGS'] += ['-s','USE_SDL_IMAGE=2']
+    commonenv['CCLINKFLAGS'] += ['-s','SDL2_IMAGE_FORMATS=\'["xpm"]\'']
+    commonenv['CCLINKFLAGS'] += ['-s','USE_OFFSET_CONVERTER']
+    #commonenv['CXXLINKFLAGS'] += ['-s', 'BINARYEN_ASYNC_COMPILATION=0']
+    #commonenv['CXXLINKFLAGS'] += ['-s','USE_PTHREADS=1']
+    #commonenv['CXXLINKFLAGS'] += ['-s', 'SHARED_MEMORY=1']
+    commonenv['CCLINKFLAGS'] += ['-s', 'USE_SDL_MIXER=2']
+    commonenv['CCLINKFLAGS'] += ['-s','ASYNCIFY']
+    #commonenv['CXXLINKFLAGS'] += ['-s','WASM=0']
+    commonenv['CCLINKFLAGS'] += ['-s','INITIAL_MEMORY=256MB']
+    #commonenv['CXXLINKFLAGS'] += ['-s','ALLOW_MEMORY_GROWTH=1']
+    commonenv['CCLINKFLAGS'] += ['-s','TOTAL_STACK=128MB']
+    # this should catch the problem at allocation
+    #commonenv['CXXLINKFLAGS'] += ['-s', 'SAFE_HEAP=1']
+    commonenv['CCLINKFLAGS'] += ['-s', 'ASSERTIONS=1']
+    commonenv['CCLINKFLAGS'] += ['-s', 'DEMANGLE_SUPPORT=1']
+
+
+    #commonenv['CXXLINKFLAGS'] += ['-s','EXPORTED_FUNCTIONS=[\'_SDL_AtomicGet\', \'_SDL_AtomicSet\']']
+
+    #common_libraries += 'X11'.split(" ")
+else:
+    base_modules += ['os_sockets.c']
 
 if win32:
     base_modules += ['os_windows.bas', 'os_windows2.c', 'lib/win98_compat.bas',
@@ -1154,7 +1262,7 @@ elif unix:  # Unix+X11 systems: Linux & BSD
         # Exclusively gfx_console
         commonenv['FBFLAGS'] += ['-d', 'NO_X11']
         commonenv['CFLAGS'] += ['-DNO_X11']
-    else:
+    elif not web:
         # All graphical gfx backends need the X11 libs
         common_libraries += 'X11 Xext Xpm Xrandr Xrender Xinerama'.split (' ')
         common_modules += ['lib/x11_printerror.c']
@@ -1210,9 +1318,14 @@ for lib in common_libraries + base_libraries:
         # found (even if we add the framework path, because it's not called libSDL.dylib))
         commonenv['CCLINKFLAGS'] += ['-framework', lib]
         commonenv['FBLINKERFLAGS'] += ['-framework', lib]
-    else:
+    elif not web:
         commonenv['CCLINKFLAGS'] += ['-l' + lib]
         commonenv['FBLINKFLAGS'] += ['-l', lib]
+if web:
+    # normally on *nix it would be like -lfb, but we want the emscripten versions
+    commonenv['CCLINKFLAGS'] += ['-L' + libpath, os.path.join(libpath,'libfb.a'), os.path.join(libpath, 'libfbgfx.a'), os.path.join(libpath, 'libfbrt.a')]
+    commonenv['FBLINKFLAGS'] += ['-p' + libpath, os.path.join(libpath,'libfb.a'), os.path.join(libpath, 'libfbgfx.a'), os.path.join(libpath, 'libfbrt.a')]
+
 
 
 ################ Modules
@@ -1419,6 +1532,10 @@ if win32:
 else:
     gamename = 'ohrrpgce-game'
     editname = 'ohrrpgce-custom'
+
+if web:
+    gamename += ".html"
+    editname += ".html"
 
 if android_source:
     # android_source is a hack:

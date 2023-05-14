@@ -1302,6 +1302,7 @@ FOR i as integer = 0 TO last_slot
  END IF
 NEXT i
 
+DIM skip_to_freesprites as bool = NO
 IF loading THEN
  'Check for no saves
  DIM nosaves as bool = YES
@@ -1311,82 +1312,85 @@ IF loading THEN
  IF nosaves THEN
   ret_slot = -1
   IF beep_if_no_saves THEN MenuSound gen(genCancelSFX)
-  GOTO freesprites
+  skip_to_freesprites = YES
  END IF
 END IF
 
-'FIXME: using need_fade_in to trigger the sound effect seems like a bad idea
-IF gam.need_fade_in = NO THEN MenuSound gen(genAcceptSFX)
-setkeys
-DO
- setwait speedcontrol
- setkeys
- IF loading = NO THEN playtimer
- IF carray(ccCancel) > 1 THEN
-  MenuSound gen(genCancelSFX)
-  ret_slot = -2
-  EXIT DO
- END IF
-
- 'Make menu position -2 appear as -1 to usemenu
- DIM temppt as integer = iif(st.pt = -2, -1, st.pt)
- usemenusounds
- IF usemenu(temppt, st.top, st.first, st.last, st.size) THEN
-  st.pt = temppt
- END IF
- IF get_gen_bool("/mouse/mouse_menus") THEN
-  picksave_update_mouse st, newgame_opt, drag_start_top
- END IF
- IF st.pt < 0 AND newgame_opt THEN
-  IF carray(ccLeft) > 1 THEN st.pt = -1: MenuSound gen(genCursorSFX)
-  IF carray(ccRight) > 1 THEN st.pt = -2: MenuSound gen(genCursorSFX)
- END IF
-
- IF carray(ccUse) > 1 ORELSE (get_gen_bool("/mouse/mouse_menus") ANDALSO (readmouse.release AND mouseLeft) ANDALSO readmouse.drag_dist < 10 ANDALSO (readmouse.buttons AND mouseRight) = 0 ) THEN
-  IF newgame_opt AND st.pt = -1 THEN
-   'Selected "New Game"
-   MenuSound gen(genAcceptSFX)
-   ret_slot = -1
-   EXIT DO
-  ELSEIF st.pt < 0 THEN
-   'Selected "Cancel" or "Exit"
-   MenuSound gen(genCancelSFX)
-   ret_slot = -2
-   EXIT DO
-  ELSE
-   allow = YES
-   IF loading THEN
-    '--don't allow load of an empty save
-    IF pv(st.pt).valid = 0 THEN allow = NO
-   ELSE
-    '--normal save in a slot
-    IF pv(st.pt).valid THEN allow = picksave_confirm(menu(), loading, newgame_opt, sprites(), pv(), mapname(), lev(), st, holdscreen, page)
-   END IF
-   IF allow = YES THEN
-    MenuSound gen(genAcceptSFX)
-    ret_slot = st.pt
-    EXIT DO
-   ELSE
+if skip_to_freesprites = NO THEN
+  'FIXME: using need_fade_in to trigger the sound effect seems like a bad idea
+  IF gam.need_fade_in = NO THEN MenuSound gen(genAcceptSFX)
+  setkeys
+  DO
+  setwait speedcontrol
+  setkeys
+  IF loading = NO THEN playtimer
+  IF carray(ccCancel) > 1 THEN
     MenuSound gen(genCancelSFX)
-   END IF
+    ret_slot = -2
+    EXIT DO
   END IF
- END IF
- copypage holdscreen, page
- picksave_draw menu(), loading, newgame_opt, sprites(), pv(), mapname(), lev(), st, page
- setvispage vpage
- check_for_queued_fade_in
- dowait
-LOOP
 
-freesprites:
-freepage page
-freepage holdscreen
-clearkeys
-FOR i as integer = 0 TO last_slot
- FOR o as integer = 0 TO 3
-  unload_sprite_and_pal sprites(i, o)
- NEXT
-NEXT
+  'Make menu position -2 appear as -1 to usemenu
+  DIM temppt as integer = iif(st.pt = -2, -1, st.pt)
+  usemenusounds
+  IF usemenu(temppt, st.top, st.first, st.last, st.size) THEN
+    st.pt = temppt
+  END IF
+  IF get_gen_bool("/mouse/mouse_menus") THEN
+    picksave_update_mouse st, newgame_opt, drag_start_top
+  END IF
+  IF st.pt < 0 AND newgame_opt THEN
+    IF carray(ccLeft) > 1 THEN st.pt = -1: MenuSound gen(genCursorSFX)
+    IF carray(ccRight) > 1 THEN st.pt = -2: MenuSound gen(genCursorSFX)
+  END IF
+
+  IF carray(ccUse) > 1 ORELSE (get_gen_bool("/mouse/mouse_menus") ANDALSO (readmouse.release AND mouseLeft) ANDALSO readmouse.drag_dist < 10 ANDALSO (readmouse.buttons AND mouseRight) = 0 ) THEN
+    IF newgame_opt AND st.pt = -1 THEN
+    'Selected "New Game"
+    MenuSound gen(genAcceptSFX)
+    ret_slot = -1
+    EXIT DO
+    ELSEIF st.pt < 0 THEN
+    'Selected "Cancel" or "Exit"
+    MenuSound gen(genCancelSFX)
+    ret_slot = -2
+    EXIT DO
+    ELSE
+    allow = YES
+    IF loading THEN
+      '--don't allow load of an empty save
+      IF pv(st.pt).valid = 0 THEN allow = NO
+    ELSE
+      '--normal save in a slot
+      IF pv(st.pt).valid THEN allow = picksave_confirm(menu(), loading, newgame_opt, sprites(), pv(), mapname(), lev(), st, holdscreen, page)
+    END IF
+    IF allow = YES THEN
+      MenuSound gen(genAcceptSFX)
+      ret_slot = st.pt
+      EXIT DO
+    ELSE
+      MenuSound gen(genCancelSFX)
+    END IF
+    END IF
+  END IF
+  copypage holdscreen, page
+  picksave_draw menu(), loading, newgame_opt, sprites(), pv(), mapname(), lev(), st, page
+  setvispage vpage
+  check_for_queued_fade_in
+  dowait
+  LOOP
+
+'freesprites:
+ELSE
+  freepage page
+  freepage holdscreen
+  clearkeys
+  FOR i as integer = 0 TO last_slot
+  FOR o as integer = 0 TO 3
+    unload_sprite_and_pal sprites(i, o)
+  NEXT
+  NEXT
+END IF
 
 RETURN ret_slot
 

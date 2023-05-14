@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include <dirent.h>
 #include <fnmatch.h>
+#include <fcntl.h>
 #include <pthread.h>
 
 #include "errorlog.h"

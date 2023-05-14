@@ -8,7 +8,8 @@
 #define __FB_H__
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #ifndef FBCVERSION
@@ -44,19 +45,19 @@ extern "C" {
 
 /* Defines the ASCII code that indicates a two-byte key code.
    A two-byte key code will be returned by GET on SCRN: or INKEY$. */
-#define FB_EXT_CHAR           ((char)255)
+#define FB_EXT_CHAR ((char)255)
 
 /* Maximum number of temporary string descriptors. */
 #define FB_STR_TMPDESCRIPTORS 256
 
 /* Maximum number of array dimensions. */
-#define FB_MAXDIMENSIONS      8
+#define FB_MAXDIMENSIONS 8
 
 /* Maximum number of temporary array descriptors. */
 #define FB_ARRAY_TMPDESCRIPTORS (FB_STR_TMPDESCRIPTORS / 4)
 
 /* The padding width (for PRINT ,). */
-#define FB_TAB_WIDTH          14
+#define FB_TAB_WIDTH 14
 
 #if FB_TAB_WIDTH == 8
 #define FB_NATIVE_TAB 1
@@ -64,185 +65,223 @@ extern "C" {
 
 /* Screen width/height returned by default when native console function failed.
    This is required when an applications output is redirected. */
-#define FB_SCRN_DEFAULT_WIDTH  80
+#define FB_SCRN_DEFAULT_WIDTH 80
 #define FB_SCRN_DEFAULT_HEIGHT 25
 
 /* Default colors for console color() function */
-#define FB_COLOR_FG_DEFAULT   0x1
-#define FB_COLOR_BG_DEFAULT   0x2
+#define FB_COLOR_FG_DEFAULT 0x1
+#define FB_COLOR_BG_DEFAULT 0x2
 
 /* Number of reserved file handles. 0: SCRN, 1: LPT1 */
-#define FB_RESERVED_FILES     2
+#define FB_RESERVED_FILES 2
 
 /* Maximum number of file handles. */
-#define FB_MAX_FILES          (FB_RESERVED_FILES + 255)
+#define FB_MAX_FILES (FB_RESERVED_FILES + 255)
 
 /* File buffer size (for buffered read?). */
-#define FB_FILE_BUFSIZE       8192
+#define FB_FILE_BUFSIZE 8192
 
 /* Max length to allocated for a temporary buffer on stack */
-#define FB_LOCALBUFF_MAXLEN   32768
+#define FB_LOCALBUFF_MAXLEN 32768
 
 #ifndef HOST_WIN32
-	/* Maximum path length for Non-Win32 targets. For Win32 targets, this
-	   value will be set automatically by windows.h. */
-	#define MAX_PATH    1024
+/* Maximum path length for Non-Win32 targets. For Win32 targets, this
+   value will be set automatically by windows.h. */
+#define MAX_PATH 1024
 #endif
 
 /* Convert char to int without sign-extension. */
-#define FB_CHAR_TO_INT(ch)  ((int) ((unsigned) (unsigned char) (ch)))
+#define FB_CHAR_TO_INT(ch) ((int)((unsigned)(unsigned char)(ch)))
 
-
-/* The following has been added to replace dependance on fb_unix.h, fb_win32.h etc (bad idea?) */
+	/* The following has been added to replace dependance on fb_unix.h, fb_win32.h etc (bad idea?) */
 
 #if defined HOST_WIN32
 
-	#include <io.h>
+#include <io.h>
 
 	// Copied from rtlib/win32/fb_win32.h
 
-	#ifdef HOST_X86
-	#define FBCALL __stdcall
-	#else
-	#define FBCALL
-	#endif
+#ifdef HOST_X86
+#define FBCALL __stdcall
+#else
+#define FBCALL
+#endif
 
-	#ifdef HOST_CYGWIN
+#ifdef HOST_CYGWIN
 	typedef off_t fb_off_t;
-	#else
+#else
 	/* MinGW-w64 recognizes -D_FILE_OFFSET_BITS=64, but MinGW does not, so we
 	can't be sure that ftello() really maps to the 64bit version...
 	so we have to do it manually. */
 	typedef long long fb_off_t;
-	#define fseeko(stream, offset, whence) fseeko64(stream, offset, whence)
-	#define ftello(stream)                 ftello64(stream)
-	#endif
+#define fseeko(stream, offset, whence) fseeko64(stream, offset, whence)
+#define ftello(stream) ftello64(stream)
+#endif
 
+// TMC: Added
+#if defined(_MSC_VER) || (defined(__BORLANDC__) && (__BORLANDC__ <= 0x0560))
+// MSVC++ and earlier versions of the Borland C++ Builder are missing ssize_t
+#if defined _WIN64
+	typedef __int64 ssize_t;
+#else
+	typedef __int32 ssize_t;
+#endif
+#endif
+#if defined _MSC_VER
+// #defining to inline only works in C++, not C
+#define __inline__ __inline
+#endif
 
-	// TMC: Added
-	#if defined(_MSC_VER) || ( defined(__BORLANDC__) && (__BORLANDC__ <= 0x0560) )
-		// MSVC++ and earlier versions of the Borland C++ Builder are missing ssize_t
-		#if defined _WIN64
-			typedef __int64 ssize_t;
-		#else
-			typedef __int32 ssize_t;
-		#endif
-	#endif
-	#if defined _MSC_VER
-		// #defining to inline only works in C++, not C
-		#define __inline__  __inline
-	#endif
+#elif defined(HOST_UNIX)
 
-#elif defined HOST_UNIX
+// Copied from rtlib/unix/fb_unix.h
 
-	// Copied from rtlib/unix/fb_unix.h
+#include <unistd.h>
 
-	#include <unistd.h>
+#define FBCALL
 
-	#define FBCALL
+/* Relying on -D_FILE_OFFSET_BITS=64 to transparently remap to off64_t */
+#if !defined _FILE_OFFSET_BITS || _FILE_OFFSET_BITS != 64
+#error Expected _FILE_OFFSET_BITS=64
+#endif
+typedef off_t fb_off_t;
 
-	/* Relying on -D_FILE_OFFSET_BITS=64 to transparently remap to off64_t */
-	#if !defined _FILE_OFFSET_BITS || _FILE_OFFSET_BITS != 64
-	#error Expected _FILE_OFFSET_BITS=64
-	#endif
-	typedef off_t fb_off_t;
+#elif defined(HOST_JS)
+#define FBCALL
+
+/* newline for console/file I/O */
+#define FB_NEWLINE "\r\n"
+#define FB_NEWLINE_WSTR _LC("\r\n")
+
+/* newline for printer I/O */
+#define FB_BINARY_NEWLINE "\r\n"
+#define FB_BINARY_NEWLINE_WSTR _LC("\r\n")
+#define FB_LL_FMTMOD "ll"
+#define FB_CONSOLE_MAXPAGES 1
+#define FB_DYLIB HANDLE
+
+typedef long fb_off_t;
+#define fseeko(stream, offset, whence) fseek(stream, offset, whence)
+#define ftello(stream) ftell(stream)
 
 #else
-	#error "XBOX and DOS not supported by the OHRRPGCE"
+#error "XBOX and DOS not supported by the OHRRPGCE"
 #endif
 
 
-FBCALL void fb_Lock( void );
-FBCALL void fb_Unlock( void );
-FBCALL void fb_StrLock( void );
-FBCALL void fb_StrUnlock( void );
-FBCALL void fb_GraphicsLock  ( void );
-FBCALL void fb_GraphicsUnlock( void );
-#define FB_LOCK()      fb_Lock()
-#define FB_UNLOCK()    fb_Unlock()
-#define FB_STRLOCK()   fb_StrLock()
-#define FB_STRUNLOCK() fb_StrUnlock()
-#define FB_GRAPHICS_LOCK()   fb_GraphicsLock()
-#define FB_GRAPHICS_UNLOCK() fb_GraphicsUnlock()
-
+#if !defined HOST_JS // JS build doesn't use multithreading
+	FBCALL void fb_Lock(void);
+	FBCALL void fb_Unlock(void);
+	FBCALL void fb_StrLock(void);
+	FBCALL void fb_StrUnlock(void);
+	FBCALL void fb_GraphicsLock(void);
+	FBCALL void fb_GraphicsUnlock(void);
+	#define FB_LOCK() fb_Lock()
+	#define FB_UNLOCK() fb_Unlock()
+	#define FB_STRLOCK() fb_StrLock()
+	#define FB_STRUNLOCK() fb_StrUnlock()
+	#define FB_GRAPHICS_LOCK() fb_GraphicsLock()
+	#define FB_GRAPHICS_UNLOCK() fb_GraphicsUnlock()
+#else
+	#define FB_LOCK()
+	#define FB_UNLOCK()
+	#define FB_STRLOCK()
+	#define FB_STRUNLOCK()
+	#define FB_GRAPHICS_LOCK()
+	#define FB_GRAPHICS_UNLOCK()
+	#define FB_MATH_LOCK()
+	#define FB_MATH_UNLOCK()
+#endif
 
 #define FB_WCHAR char
-typedef uint32_t UTF_32;
-typedef uint16_t UTF_16;
-typedef uint8_t  UTF_8;
+	typedef uint32_t UTF_32;
+	typedef uint16_t UTF_16;
+	typedef uint8_t UTF_8;
 
+	/* internal lists */
+	typedef struct _FB_LISTELEM
+	{
+		struct _FB_LISTELEM *prev;
+		struct _FB_LISTELEM *next;
+	} FB_LISTELEM;
 
-/* internal lists */
-typedef struct _FB_LISTELEM {
-    struct _FB_LISTELEM    *prev;
-    struct _FB_LISTELEM    *next;
-} FB_LISTELEM;
-
-typedef struct _FB_LIST {
-    int                cnt;      /* Number of used elements */
-    FB_LISTELEM        *head;    /* First used element */
-    FB_LISTELEM        *tail;    /* Last used element */
-    FB_LISTELEM        *fhead;   /* First free element */
-} FB_LIST;
-
+	typedef struct _FB_LIST
+	{
+		int cnt;			/* Number of used elements */
+		FB_LISTELEM *head;	/* First used element */
+		FB_LISTELEM *tail;	/* Last used element */
+		FB_LISTELEM *fhead; /* First free element */
+	} FB_LIST;
 
 #include "fb_array.h"
 #include "fb_string.h"
 #include "fb_file.h"
 #include "fb_device.h"
-#include "fb_error.h"   // Only for enum FB_RTERROR
+#include "fb_error.h" // Only for enum FB_RTERROR
 #include "fb_thread.h"
 
-typedef FBCALL int (*FnDummy)();
+	typedef FBCALL int (*FnDummy)();
 
-// Although the signatures of these functions have sometimes changed, the contents of
-// this struct have only changed once since 2007 (as of 2020)
-typedef struct FB_HOOKSTB {
-	FnDummy inkeyproc;
-	FnDummy getkeyproc;
-	FnDummy keyhitproc;
-	FnDummy clsproc;
-	FnDummy colorproc;
-	FnDummy locateproc;
-	FnDummy widthproc;
-	FnDummy getxproc;
-	FnDummy getyproc;
-	FnDummy getxyproc;
-	FnDummy getsizeproc;
-	FnDummy printbuffproc;
-	FnDummy printbuffwproc;
-	FnDummy readstrproc;
-	FnDummy multikeyproc;
-	FnDummy getmouseproc;
-	FnDummy setmouseproc;
-	FnDummy inproc;
-	FnDummy outproc;
-	FnDummy viewupdateproc;
-	FnDummy lineinputproc;
-	FnDummy lineinputwproc;
-	FnDummy readxyproc;
-	FnDummy sleepproc;
-	FnDummy isredirproc;
-	FnDummy pagecopyproc;
-	FnDummy pagesetproc;
-#if FBCVERSION >= 1080	// Added on FB's emscripten branch, not merged until FB 1.08
-	FnDummy posteventproc;
+	// Although the signatures of these functions have sometimes changed, the contents of
+	// this struct have only changed once since 2007 (as of 2020)
+	typedef struct FB_HOOKSTB
+	{
+		FnDummy inkeyproc;
+		FnDummy getkeyproc;
+		FnDummy keyhitproc;
+		FnDummy clsproc;
+		FnDummy colorproc;
+		FnDummy locateproc;
+		FnDummy widthproc;
+		FnDummy getxproc;
+		FnDummy getyproc;
+		FnDummy getxyproc;
+		FnDummy getsizeproc;
+		FnDummy printbuffproc;
+		FnDummy printbuffwproc;
+		FnDummy readstrproc;
+		FnDummy multikeyproc;
+		FnDummy getmouseproc;
+		FnDummy setmouseproc;
+		FnDummy inproc;
+		FnDummy outproc;
+		FnDummy viewupdateproc;
+		FnDummy lineinputproc;
+		FnDummy lineinputwproc;
+		FnDummy readxyproc;
+		FnDummy sleepproc;
+		FnDummy isredirproc;
+		FnDummy pagecopyproc;
+		FnDummy pagesetproc;
+#if FBCVERSION >= 1080 // Added on FB's emscripten branch, not merged until FB 1.08
+		FnDummy posteventproc;
 #endif
-} FB_HOOKSTB;
+	} FB_HOOKSTB;
+
+#if FBCVERSION < 240
+	typedef uintptr_t FB_TLSENTRY; // Platform dependent, e.g. pthread_key_t on Unix
+#define FB_TLSKEYS 5
+#endif
 
 // This is also fairly stable. We need this to access the file table, fileTB.
-typedef struct FB_RTLIB_CTX_ {
-	int             argc;
-	char          **argv;
-	FBSTRING        null_desc;
-	char           *errmsg;
-	//FnDummy         pfnDevOpenHook;  used to be here, sigh
-	FB_HOOKSTB      hooks;
-	FB_FILE         fileTB[FB_MAX_FILES];
+typedef struct FB_RTLIB_CTX_
+{
+	int argc;
+	char **argv;
+	FBSTRING null_desc;
+	char *errmsg;
+	#if FBCVERSION < 240
+		FnDummy pfnDevOpenHook;
+		FB_TLSENTRY tls_ctxtb[FB_TLSKEYS];
+	#endif
+	FB_HOOKSTB hooks;
+	FB_FILE fileTB[FB_MAX_FILES];
 	/* We don't care about anything after this point */
-	int             do_file_reset;
-	int             lang;
-	void          (*exit_gfxlib2)(void);
+	int do_file_reset;
+	int lang;
+	#if FBCVERSION >= 1020
+		void (*exit_gfxlib2)(void);
+	#endif
 } FB_RTLIB_CTX;
 
 extern FB_RTLIB_CTX __fb_ctx;

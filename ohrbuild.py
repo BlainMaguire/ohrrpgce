@@ -278,7 +278,7 @@ def get_cc_info(CC):
     ret.name = match.group(1)
     ret.version = int(match.group(2).replace('.', '')) # Convert e.g. 4.9.2 to 492
     ret.target = match2.group(1)
-    ret.is_clang = ret.name == 'clang'
+    ret.is_clang = (ret.name in ('clang', 'emcc'))
     ret.is_gcc = ret.name == 'gcc'
     ret.path = CC
     return ret
@@ -364,6 +364,8 @@ def runtime_lib_names(win32, mac, android, frameworks = None, libdir = None):
         # These are passed to dylib_noload, which requires full filenames
         # Defaults (these are symlinks)
         for libname in libnames:
+            # for emscripten version should we remove lib prefix and .so ?
+            #libs[libname] = libname
             libs[libname] = 'lib' + libname + '.so'
         # For some reason the SDL 1.2 Android port uses different names
         # (although commit 487062dd switched to proper name for libSDL2)
