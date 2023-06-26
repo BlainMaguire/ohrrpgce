@@ -10,8 +10,9 @@
     <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
     <title>Emscripten-Generated Code</title>
     <style>
+      body { background-color: #555; }
       .emscripten { padding-right: 0; margin-left: auto; margin-right: auto; display: block; }
-      textarea.emscripten { font-family: monospace; width: 80%; }
+      textarea.emscripten { font-family: monospace; width: 80%; height: 50px; }
       div.emscripten { text-align: center; }
       div.emscripten_border { border: 1px solid black; }
       /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
@@ -52,7 +53,6 @@
     </style>
   </head>
   <body>
-    <hr/>
     <figure style="overflow:visible;" id="spinner"><div class="spinner"></div><center style="margin-top:0.5em"><strong>emscripten</strong></center></figure>
     <div class="emscripten" id="status">Downloading...</div>
     <div class="emscripten">
@@ -72,7 +72,6 @@
     
     <hr/>
     <textarea class="emscripten" id="output" rows="8"></textarea>
-    <hr>
     <!-- required for console support, copied from fbc/lib/js-asmjs -->
     <!-- might not actually need this, if we do it should be a prebuild step rather than copying the lib -->
     <script type="text/javascript" src="fb_rtlib.js"></script>
