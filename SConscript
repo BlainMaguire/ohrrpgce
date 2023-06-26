@@ -150,7 +150,7 @@ elif 'linux' in target:
     glibc = True
 elif 'bsd' in target or 'unix' in target:
     unix = True
-elif 'js' in target:
+elif 'web' in target or 'js' in target:
     web = True
     minos = True
     default_cc = 'emcc'  # Emscripten
@@ -350,6 +350,8 @@ if tiny:
     FBFLAGS += ["-O", "2"]  # Currently no effect
 elif optimisations:
     CFLAGS.append ('-O3')
+    # Under Emscripten, linking with -O1 is a lot slower than both -O0 and -O2. -O0 is not much faster
+    # But can't link ohrrpgce-game with -O0, too many locals.
     CCLINKFLAGS.append ('-O2')  # For LTO
     if optimisations > 1:
         # Also optimise FB code. Only use -O2 instead of -O3 because -O3 produces about 10% larger
@@ -907,6 +909,21 @@ if linkgcc:
             if not portable or mac:
                 CCLINKFLAGS += ['-lncurses']
 
+    if web:
+        extraflags = ''
+        # preload file option maps ./data folder to /data in the file system (MEMFS)
+        # This is needed by Custom, and it's a convenient way to provide an .rpg for Game.
+        if for_node:
+            extraflags += ' --pre-js print_to_console.js --post-js ' + os.path.join(libpath, 'fb_rtlib.js')
+        else:
+            extraflags += ' --preload-file data'
+            if False:
+                # Use FB's default shell
+                extraflags += ' --shell-file ' + os.path.join(libpath, 'fb_shell.html') + ' --pre-js ' + os.path.join(libpath, 'fb_rtlib.js')
+            else:
+                extraflags += ' --shell-file web/ohrrpgce-shell-template.html'
+        CCLINKFLAGS += extraflags.split()
+
     if pdb:
         # Note: to run cv2pdb you need Visual Studio or Visual C++ Build Tools installed,
         # but not necessarily in PATH. (Only a few dlls and mspdbsrv.exe actually needed.)
@@ -1000,6 +1017,30 @@ if portable and (unix and not mac):
 # dependencies... hmmm...
 # if unix:
 #     CCLINKFLAGS += ['-static-libgcc']
+
+if web:
+    EMFLAGS = ['ASYNCIFY']
+    EMFLAGS += ['WASM=' + str(wasm)]
+    if wasm:
+        # Needed to convert wasm offsets to function names
+        EMFLAGS += ['USE_OFFSET_CONVERTER']
+    EMFLAGS += ['DEMANGLE_SUPPORT=1']
+    # Commandline programs should quit when done. Avoids a warning.
+    # Game/Custom probably shouldn't quit.
+    EMFLAGS += ['EXIT_RUNTIME']
+
+    EMFLAGS += ['INITIAL_MEMORY=128MB']
+    #EMFLAGS += ['ALLOW_MEMORY_GROWTH=1']
+    #EMFLAGS += ['MALLOC=emmalloc']  # Simpler/smaller allocator
+
+    if debug >= 3:
+        EMFLAGS += ['ASSERTIONS=2']
+        # Check for bad pointer access including null pointers and alignment faults
+        EMFLAGS += ['SAFE_HEAP=1']
+
+    emlinkflags = sum((['-s',flag] for flag in EMFLAGS), [])
+    CCLINKFLAGS += emlinkflags
+    FBLINKERFLAGS += emlinkflags
 
 #################### Generate extraconfig.cfg for Android
 
@@ -1120,8 +1161,34 @@ for k in music:
 
 ################ OS-specific modules and libraries
 
-# This module is OS-specific but shared by Windows (winsock) and Unix. A web port probably won't use it.
-base_modules += ['os_sockets.c']
+if web:
+    # -lidbfs.js for IndexedDB local storage
+    common_libraries += ["idbfs.js"]
+
+    emsdlflags = []
+    #EMFLAGS += ['USE_PTHREADS=1']  # Need to pass at compile-time too?
+    #EMFLAGS += ['USE_SDL_IMAGE=0', 'USE_SDL_TTF=0', 'USE_SDL_NET=0']
+    if 'sdl' in gfx:
+        emsdlflags += ['-s', 'USE_SDL=1']
+        emsdlflags += ['-s', 'USE_SDL_MIXER=1']
+    elif 'sdl2' in gfx:
+        emsdlflags += ['-s', 'USE_SDL=2']
+        emsdlflags += ['-s', 'USE_SDL_MIXER=2', '-s', 'SDL2_MIXER_FORMATS=["ogg", "mod", "mid"]']
+        #emsdlflags += ['-s', 'USE_MODPLUG', '-s', 'USE_MPG123']
+
+    emlinkflags = sum((['-s',flag] for flag in EMFLAGS), [])
+    commonenv['CCLINKFLAGS'] += emlinkflags + emsdlflags
+    commonenv['FBLINKERFLAGS'] += emlinkflags + emsdlflags
+    if linkgcc:
+        env['CCLINKFLAGS'] += emlinkflags
+        commonenv['CCLINKFLAGS'] += emlinkflags + emsdlflags
+    else:
+        env['FBLINKERFLAGS'] += emlinkflags
+        commonenv['FBLINKERFLAGS'] += emlinkflags + emsdlflags
+
+if not minos:
+    # This module is OS-specific but shared by Windows (winsock) and Unix. A web port probably won't use it.
+    base_modules += ['os_sockets.c']
 
 if win32:
     base_modules += ['os_windows.bas', 'os_windows2.c', 'lib/win98_compat.bas',
@@ -1253,7 +1320,7 @@ for lib in common_libraries + base_libraries:
         # found (even if we add the framework path, because it's not called libSDL.dylib))
         commonenv['CCLINKFLAGS'] += ['-framework', lib]
         commonenv['FBLINKERFLAGS'] += ['-framework', lib]
-    else:
+    else:  #elif not web:
         commonenv['CCLINKFLAGS'] += ['-l' + lib]
         commonenv['FBLINKFLAGS'] += ['-l', lib]
 
