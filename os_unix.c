@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include <dirent.h>
 #include <fnmatch.h>
+#include <fcntl.h>
 #include <pthread.h>
 
 #include "errorlog.h"
@@ -65,6 +66,7 @@ void external_log(const char *msg) {
 #ifdef __ANDROID__
 	__android_log_write(ANDROID_LOG_INFO, "OHRRPGCE", msg);
 #endif
+printf("%s", msg);
 }
 
 static long long milliseconds() {
@@ -913,7 +915,7 @@ int checked_system(const char* cmdline) {
 //waitable is true if you want cleanup_process to wait for the command to finish (ignored on
 //           Windows: always waitable)
 ProcessHandle open_process (FBSTRING *program, FBSTRING *args, boolint waitable, boolint show_output) {
-#ifdef __ANDROID__
+#if defined(__ANDROID__) || defined(__EMSCRIPTEN__)
 	// Early versions of the NDK don't have popen
 	return 0;
 #else

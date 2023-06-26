@@ -69,31 +69,38 @@ filetype_names(fileTypeError)       = "unreadable"
 'Note also that this installs signal handlers, but some of those signal handlers
 'are overridden on Unix by setup_exception_handler()
 SUB setup_fb_error_handler()
-  'There seems to be a gengcc bug at play: passing the address of a label to a
-  'function doesn't work (gcc docs say it's undefined behaviour) and the address
-  'of this function gets passed instead. So we see this function reentering if
-  'an error occurs, rather than starting at QB_error_handler!
-  STATIC as bool already_setup
-  IF already_setup THEN GOTO QB_error_handler
-  already_setup = YES
 
-  'What's this wacky QB stuff doing in a FB codebase!
-  ON ERROR GOTO QB_error_handler
-  EXIT SUB
+   #ifdef __FB_JS__
+    'WebAssembly doesn't seem to support GOTO label
+    ON ERROR GOTO 0
+   #else
 
- QB_error_handler:
-  STATIC as integer reentered
-  IF reentered <> 0 THEN SYSTEM 99 'fatal_error_shutdown
-  reentered += 1
+'   'There seems to be a gengcc bug at play: passing the address of a label to a
+'   'function doesn't work (gcc docs say it's undefined behaviour) and the address
+'   'of this function gets passed instead. So we see this function reentering if
+'   'an error occurs, rather than starting at QB_error_handler!
+   STATIC as bool already_setup
+   IF already_setup THEN GOTO QB_error_handler
+   already_setup = YES
 
-  'Warning: any code using anonymous temporary string variables here seems to crash,
-  'unless compiling with -gen gcc, because the function prologue hasn't occurred!
-  DIM as integer err_num = ERR, err_line = ERL
-  DIM as zstring ptr func_name = ERFN, mod_name = ERMN
-  DIM as zstring ptr message = ANY
-  message = format_FB_error_message(err_num, err_line, mod_name, func_name)
-  DIM interrupt_signal as bool = (err_num = fberrSIGINT) OR (err_num = fberrSIGQUIT) OR (err_num = fberrSIGTERM)
-  fb_error_hook message, interrupt_signal
+   'What's this wacky QB stuff doing in a FB codebase!
+   ON ERROR GOTO QB_error_handler
+   EXIT SUB
+
+  QB_error_handler:
+   STATIC as integer reentered
+   IF reentered <> 0 THEN SYSTEM 99 'fatal_error_shutdown
+   reentered += 1
+
+   'Warning: any code using anonymous temporary string variables here seems to crash,
+   'unless compiling with -gen gcc, because the function prologue hasn't occurred!
+   DIM as integer err_num = ERR, err_line = ERL
+   DIM as zstring ptr func_name = ERFN, mod_name = ERMN
+   DIM as zstring ptr message = ANY
+   message = format_FB_error_message(err_num, err_line, mod_name, func_name)
+   DIM interrupt_signal as bool = (err_num = fberrSIGINT) OR (err_num = fberrSIGQUIT) OR (err_num = fberrSIGTERM)
+   fb_error_hook message, interrupt_signal
+   #endif
 END SUB
 
 SUB remove_fb_error_handler()
@@ -2889,7 +2896,7 @@ FUNCTION decode_filename(filename as string) as string
 
 #endif
 
-  'debug "decode_filename(" & filename & ") = " & ret
+  debug "decode_filename(" & filename & ") = " & ret
   RETURN ret
 END FUNCTION
 

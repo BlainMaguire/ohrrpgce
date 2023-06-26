@@ -206,7 +206,7 @@ DIM SHARED full_upgrade as bool = NO
 #ENDIF
 
 ' Debug log stuff
-DIM debug_to_console as bool = NO
+DIM debug_to_console as bool = YES
 'don't delete the debug file at end of play
 DIM SHARED importantdebug as bool = NO
 'Stores debug messages printed during initialisation, or in-game between playing different games.
