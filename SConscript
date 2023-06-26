@@ -14,7 +14,7 @@ from ohrbuild import get_command_output
 from misc import linux_portability_check
 import ohrbuild
 
-FBFLAGS = ['-mt'] #, '-showincludes']
+FBFLAGS = [] #, '-showincludes']
 # Flags used when compiling C and C++ modules, but NOT -gen gcc or euc generated
 # C sources (except on Android...). Not used for linking.
 CFLAGS = ['-Wall', '-Wno-deprecated-declarations']  # Complaints about mallinfo()
@@ -99,9 +99,12 @@ host_win32 = sys.platform.startswith('win')
 
 # Target OS/platform (more than one can be True)
 win32 = False
-unix = False    # True on linux, mac, android
+unix = False    # True on linux, mac, android, web
 mac = False
 android = False
+web = False     # Emscripten (unix, minos)
+minos = False   # Platforms with a minimal OS and no desktop environment, such as web or game consoles.
+                # Expect that one of win32/unix/... is True telling which OS is most similar.
 
 android_source = False
 win95 = int(ARGUMENTS.get ('win95', '0'))
@@ -110,6 +113,8 @@ default_cc = 'gcc'  # Set by compiler= arg
 target = ARGUMENTS.get ('target', None)
 cross_compiling = (target is not None)  # Possibly inaccurate, avoid!
 arch = ARGUMENTS.get ('arch', None)  # default decided below
+wasm = int(ARGUMENTS.get('wasm', 1))
+for_node = False
 
 transpile_dir = ARGUMENTS.get('transpiledir', None)
 if transpile_dir:
@@ -145,6 +150,12 @@ elif 'linux' in target:
     glibc = True
 elif 'bsd' in target or 'unix' in target:
     unix = True
+elif 'js' in target:
+    web = True
+    minos = True
+    default_cc = 'emcc'  # Emscripten
+    for_node = ('node' in target)
+    target = 'js-asmjs'  # fbc accepts no synonyms. Actually wasm not asm.js by default.
 else:
     print("!! WARNING: target '%s' not recognised!" % target)
 
@@ -194,6 +205,9 @@ if not arch:
     if target_prefix:
         # The arch is implied in the target triple. Let fbc handle it, parsing the
         # triple is too much work
+        arch = '(see target)'
+    elif web:
+        # There are no arch options to fbc. But you can run "scons wasm=0|1|2"
         arch = '(see target)'
     elif android:
         # There are 4 ARM ABIs used on Android
@@ -266,6 +280,7 @@ if debug >= 1 or pdb:
 linkgcc_strip = (debug == 0 and pdb == 0)  # (linkgcc only) strip debug info and unwanted symbols?
 
 lto = int(ARGUMENTS.get('lto', tiny != 0))  # lto=1 by default in tiny builds, but lto=0 overrides
+# Emscripten already uses LTO by default, but these extra args trim a little more off.
 if lto:
     CFLAGS.append('-flto')
     GENGCC_CFLAGS.append('-flto')
@@ -299,7 +314,7 @@ if glibc:
         FBLINKERFLAGS.append('--export-dynamic')
 
 portable = False
-if release and unix and not mac and not android:
+if release and unix and not mac and not android and not web:
     portable = True
 portable = int (ARGUMENTS.get ('portable', portable))
 
@@ -349,15 +364,17 @@ else:
     FBCC_CFLAGS.append ('-O0')
 
 # Help dead code stripping. (This helps a lot even in LTO builds!)
-CFLAGS += ['-ffunction-sections', '-fdata-sections']
-GENGCC_CFLAGS += ['-ffunction-sections', '-fdata-sections']
+# Not useful when using emscripten, which has proper dead code stripping
+if not web:
+    CFLAGS += ['-ffunction-sections', '-fdata-sections']
+    GENGCC_CFLAGS += ['-ffunction-sections', '-fdata-sections']
 
 # Backend selection.
 if 'gfx' in ARGUMENTS:
     gfx = ARGUMENTS['gfx']
 elif 'OHRGFX' in os.environ:
     gfx = os.environ['OHRGFX']
-elif mac:
+elif mac or web:
     gfx = 'sdl2'
 elif android:
     gfx = 'sdl'
@@ -495,7 +512,7 @@ def bas_build_action(moreflags = ''):
     if transpile_dir:
         return ['$FBC $FBFLAGS -r $SOURCE -o $TARGET ' + moreflags]
 
-    if gengcc and FBCC.is_clang:
+    if gengcc and FBCC.is_clang and not web:
         # fbc asks FBCC to produce assembly and then runs that through as,
         # but clang produces some directives that as doesn't like.
         # So we do the .c -> asm step ourselves.
@@ -528,6 +545,11 @@ else:
 
 if win32:
     exe_suffix = '.exe'
+elif web:
+    if for_node:
+        exe_suffix = '.js'
+    else:
+        exe_suffix = '.html'
 else:
     exe_suffix = ''
 
@@ -647,6 +669,9 @@ if mac:
 
 
 ################ Cross-compiling and arch-specific stuff
+
+if not web:
+    FBFLAGS += ['-mt']  # Multithreaded FB runtime
 
 if target:
     FBFLAGS += ['-target', target]
@@ -843,7 +868,7 @@ if linkgcc:
     # This causes ld to recursively search the dependencies of linked dynamic libraries
     # for more dependencies (specifically SDL on X11, etc)
     # Usually the default, but overridden on some distros. Don't know whether GOLD ld supports this.
-    if not mac:
+    if not mac and not web:
         CCLINKFLAGS += ['-Wl,--add-needed']
 
     # FB libs
@@ -852,6 +877,8 @@ if linkgcc:
     if android:
         # See NO_PIE discussion above
         CCLINKFLAGS += ['-Wl,-L' + libpath, os.path.join(libpath, 'fbrt0pic.o'), '-lfbmtpic']
+    elif web:
+        CCLINKFLAGS += ['-Wl,-L' + libpath, '-lfb']
     else:
         CCLINKFLAGS += ['-Wl,-L' + libpath, os.path.join(libpath, 'fbrt0.o'), '-lfbmt']
 
@@ -869,7 +896,8 @@ if linkgcc:
     else:
         CCLINKFLAGS += ['-lstdc++']
         # Android doesn't have ncurses, and libpthread is part of libc
-        if not android:
+        # web builds don't use threads
+        if not android and not web:
             # The following are required by libfb (not libfbgfx)
             CCLINKFLAGS += ['-lpthread']
             # Some Linux systems have only libncurses.so.5, others only libncurses.so.6
@@ -903,7 +931,9 @@ if linkgcc:
         else:
             handle_symbols += " || exit /b 0"   # aka " || true"
     else:
-        if tiny:
+        if web:
+            handle_symbols = None
+        elif tiny:
             # Perform a full strip
             handle_symbols = "strip $TARGET"
         elif linkgcc_strip and not mac:
@@ -1149,8 +1179,10 @@ elif android:
     base_modules += ['os_unix.c', 'os_unix2.bas']
     common_modules += ['os_unix_wm.c', 'android/sdlmain.c']
 elif unix:  # Unix+X11 systems: Linux & BSD
-    base_libraries += ['dl']
+    if not minos:
+        base_libraries += ['dl']
     base_modules += ['os_unix.c', 'os_unix2.bas']
+    # os_unix_wm.c is mostly stubs if not USE_X11 and not mac
     common_modules += ['os_unix_wm.c']
     if portable:
         # To support old libstdc++.so versions
@@ -1159,10 +1191,10 @@ elif unix:  # Unix+X11 systems: Linux & BSD
             base_modules += ['lib/termcap_stub.c']
         if glibc:
             base_modules += ['lib/glibc_compat.c']
-    if 'sdl' in gfx or 'fb' in gfx:
+    if not minos and ('sdl' in gfx or 'fb' in gfx):
+        # These files are taken from SDL2, so gfx_sdl2 doesn't need them
         common_modules += ['lib/SDL/SDL_x11clipboard.c', 'lib/SDL/SDL_x11events.c']
-    if gfx == ['console']:
-        # Exclusively gfx_console
+    if gfx == ['console'] or minos:
         commonenv['FBFLAGS'] += ['-d', 'NO_X11']
         commonenv['CFLAGS'] += ['-DNO_X11']
     else:
@@ -1814,11 +1846,11 @@ Options:
                       anything or reimporting scripts.
   v=1                 Verbose output from commands.
   linkgcc=0           Link using fbc instead of gcc/clang. May not work.
-  compiler=gcc|clang  Prefer to use clang or gcc for C, C++ and -gen gcc.
+  compiler=gcc|clang|...   Prefer to use clang/gcc/... for C, C++ and -gen gcc.
+                      Defaults to gcc (and g++), or emcc for web builds.
                       CC, CXX, FBCC environmental variables always take
-                      precedence if set. If not, by default we use gcc for C, g++
-                      for C++, and gcc for -gen gcc, and then try cc and c++ if
-                      gcc isn't present.
+                      precedence if set, but this sets the defaults.
+                      After compiler= and CC/CXX/FBCC we fallback to cc/c++.
                       Note that -exx is disabled if using clang for -gen gcc.
   transpiledir=PATH   Don't build binaries, instead transpile all FB modules to
                       .c files, and copy all .c and .cpp files together with
@@ -1836,6 +1868,8 @@ Options:
                       -any target name supported by fbc, e.g.
                        win32, linux, darwin, freebsd, android
                        or a platform-cpu pair, e.g. linux-arm
+                      -js (Emscripten, produces an .html), short for js-asmjs
+                      -node.js (produce <target>.js that can be run with node.js)
                       Current (default) value: """ + target + """
   arch=ARCH           Specify target CPU type. Overrides 'target'. Options
                       include:
@@ -1849,6 +1883,10 @@ Options:
                        32 or 64           32 or 64 bit variant of the default
                                           arch (x86 or ARM).
                       Current (default) value: """ + arch + """
+  wasm=0|1|2          (For Emscripten)
+                      0: compile to asm.js to support older browsers
+                      1: (default) compile to WebAssembly
+                      2: compile to both and select best at runtime.
   sse2=0              (x86 only). Disable SSE & SSE2 instructions to support
                       Pentium Pro+ rather than Pentium 4+. Runs slower.
   eulib=...           Only needed when cross-compiling hspeak. Path to eu.a
