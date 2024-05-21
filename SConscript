@@ -917,6 +917,10 @@ if linkgcc:
             extraflags += ' --pre-js print_to_console.js --post-js ' + os.path.join(libpath, 'fb_rtlib.js')
         else:
             extraflags += ' --preload-file data'
+            #soundfonts
+            extraflags += ' --preload-file web/timidity.cfg@/etc/timidity/timidity.cfg'
+            extraflags += ' --preload-file web/soundfonts@/soundfonts'
+
             if False:
                 # Use FB's default shell
                 extraflags += ' --shell-file ' + os.path.join(libpath, 'fb_shell.html') + ' --pre-js ' + os.path.join(libpath, 'fb_rtlib.js')
@@ -1030,13 +1034,14 @@ if web:
     EMFLAGS += ['EXIT_RUNTIME']
 
     EMFLAGS += ['INITIAL_MEMORY=128MB']
-    #EMFLAGS += ['ALLOW_MEMORY_GROWTH=1']
+    EMFLAGS += ['ALLOW_MEMORY_GROWTH=1']
+    EMFLAGS += ['STACK_SIZE=64MB']
     #EMFLAGS += ['MALLOC=emmalloc']  # Simpler/smaller allocator
 
     if debug >= 3:
         EMFLAGS += ['ASSERTIONS=2']
         # Check for bad pointer access including null pointers and alignment faults
-        EMFLAGS += ['SAFE_HEAP=1']
+        #EMFLAGS += ['SAFE_HEAP=1']
 
     emlinkflags = sum((['-s',flag] for flag in EMFLAGS), [])
     CCLINKFLAGS += emlinkflags
@@ -1163,7 +1168,7 @@ for k in music:
 
 if web:
     # -lidbfs.js for IndexedDB local storage
-    common_libraries += ["idbfs.js"]
+    common_libraries += ["idbfs.js", "workerfs.js"]
 
     emsdlflags = []
     #EMFLAGS += ['USE_PTHREADS=1']  # Need to pass at compile-time too?
@@ -1173,6 +1178,7 @@ if web:
         emsdlflags += ['-s', 'USE_SDL_MIXER=1']
     elif 'sdl2' in gfx:
         emsdlflags += ['-s', 'USE_SDL=2']
+        #emsdlflags += ['-s', 'ASSERTIONS=1']
         emsdlflags += ['-s', 'USE_SDL_MIXER=2', '-s', 'SDL2_MIXER_FORMATS=["ogg", "mod", "mid"]']
         #emsdlflags += ['-s', 'USE_MODPLUG', '-s', 'USE_MPG123']
 
