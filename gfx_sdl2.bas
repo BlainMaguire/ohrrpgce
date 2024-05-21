@@ -1337,11 +1337,6 @@ END SUB
 
 'may only be called from the main thread
 LOCAL SUB update_state()
-  /'#IFDEF __FB_JS__
-  IF is_html_input_focused() = 1 THEN
-    RETURN
-  END IF
-  #ENDIF'/
   SDL_PumpEvents()
   update_mouse()
   gfx_sdl2_process_events()
